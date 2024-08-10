@@ -51,7 +51,7 @@
 在小团队中往往会产生大量的协作文档。例如，我们会将各类文档放在网盘、svn等软件中，但是存在文档内的内容无法快速搜索的问题。因此，专门开发了一个用于存储ppt、word、png等文档的，支持私有部属的知识库的检索。
 
 
-<p>体验地址：<a href="http://81.69.247.172/#/">http://81.69.247.172/#/</a></p>
+<p>体验地址：<a href="https://alldocs.tech">https://alldocs.tech</a></p>
 
 > 管理员账号：admin123 管理员密码： admin123
 
@@ -63,7 +63,7 @@
 ‼️ 受dockerhub拉取镜像影响，此部署方法暂时失效！‼️
 ```shell
 # 克隆项目
-git clone https://github.com/Jarrettluo/document-sharing-site.git
+git clone https://github.com/Jarrettluo/all-docs.git
 
 # 切换为管理员
 su root

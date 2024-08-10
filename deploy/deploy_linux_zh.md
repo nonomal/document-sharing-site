@@ -168,7 +168,7 @@ PUT /_ingest/pipeline/attachment
 
 ## 启动后端
 
-配置环境变量启动jar包
+配置环境变量启动jar包。
 
 ```bash
 nohup env AD_PROHIBITED_WORD=false \
@@ -178,6 +178,12 @@ AD_INITIAL_PASSWORD=your_password \
 REDIS_PWD=your_redis_password \
 java -jar document-sharing-site-1.0-SNAPSHOT.jar > all.log 2>&1 &
 ```
+
+> `AD_PROHIBITED_WORD` 是否开启敏感词提醒；检测用户搜索、评论中的敏感词。
+`AD_USER_REGISTRY` 是否允许用户自行注册账号。
+`AD_INITIAL_USERNAME` 初始的管理员账号。
+`AD_INITIAL_PASSWORD` 初始的管理员密码。
+`REDIS_PWD` redis的密码。
 
 ![image-EOAMcxuYueNAkUsiubo2khd2wqDOuKJ5](deploy_linux_zh.assets/image-EOAMcxuYueNAkUsiubo2khd2wqDOuKJ5.png)
 

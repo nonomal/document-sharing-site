@@ -49,7 +49,7 @@
 
 In small teams, there is often a large number of collaborative documents. For example, we place various types of documents in cloud storage, SVN, and other software, but there is a problem with the inability to quickly search for content within the documents. Therefore, we have developed a dedicated knowledge base for storing documents such as PPT, Word, PNG, etc., which supports private deployment and retrieval.
 
-<p>Experience URL：<a href="http://81.69.247.172/#/">http://81.69.247.172/#/</a></p>
+<p>Experience URL：<a href="https://alldocs.tech">https://alldocs.tech</a></p>
 
 > administrator account：admin123, administrator password： admin123
 
@@ -60,7 +60,7 @@ In small teams, there is often a large number of collaborative documents. For ex
 ‼️ 受dockerhub拉取镜像影响，此部署方法暂时失效！‼️
 ```shell
 # clone project
-git clone https://github.com/Jarrettluo/document-sharing-site.git
+git clone https://github.com/Jarrettluo/all-docs.git
 
 # switch user to root
 su root
