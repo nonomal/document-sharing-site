@@ -38,9 +38,13 @@ java -version
 ## Redis安装
 
 ```bash
+// 安装
 apt install redis-server
+
+// 启动服务
 systemctl start redis-server
 ```
+> 如果启动服务时报错，请参考下方的解决方案。
 
 检查redis-server的运行状态
 
@@ -59,6 +63,26 @@ systemctl start redis
 ```
 
 ![image-bU0ZYeNaRJmJxLTgu5dPaPU4e9y35QPO](deploy_linux_zh.assets/image-bU0ZYeNaRJmJxLTgu5dPaPU4e9y35QPO.png)
+
+### 启动redis报错
+报错内容：`Failed to start advanced key-value store`
+
+问题原因：redis默认只支持ipv6访问，如果服务器没设置ipv6的话，就会报错。
+
+解决办法：修改redis的配置文件`sudo vim /etc/redis/redis.conf`, 将`bind 127.0.0.1 ::1` 修改为`bind 127.0.0.1`。
+
+```
+# IF YOU ARE SURE YOU WANT YOUR INSTANCE TO LISTEN TO ALL THE INTERFACES
+# COMMENT OUT THE FOLLOWING LINE.
+#
+# You will also need to set a password unless you explicitly disable protected
+# mode.
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# bind 127.0.0.1 -::1
+bind 127.0.0.1
+```
+
+
 
 ## MongoDB安装
 
