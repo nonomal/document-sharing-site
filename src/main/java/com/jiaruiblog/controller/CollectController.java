@@ -1,13 +1,15 @@
 package com.jiaruiblog.controller;
 
+import com.jiaruiblog.common.MessageConstant;
 import com.jiaruiblog.entity.CollectDocRelationship;
 import com.jiaruiblog.entity.dto.CollectDTO;
-import com.jiaruiblog.service.impl.CollectServiceImpl;
+import com.jiaruiblog.service.CollectService;
+import com.jiaruiblog.service.IFileService;
+import com.jiaruiblog.service.IUserService;
 import com.jiaruiblog.util.BaseApiResult;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -29,18 +31,37 @@ import java.util.Date;
 public class CollectController {
 
     @Resource
-    CollectServiceImpl collectServiceImpl;
+    private CollectService collectService;
 
+    @Resource
+    private IUserService userService;
+
+    @Resource
+    private IFileService fileService;
+
+    /**
+     * @Author luojiarui
+     * @Description 废弃该文档
+     * @Date 13:30 2023/4/5
+     * @Param [collect, request]
+     * @return com.jiaruiblog.util.BaseApiResult
+     **/
+    @Deprecated
     @ApiOperation(value = "新增一个收藏文档", notes = "新增单个收藏文档")
     @PostMapping(value = "/auth/insert")
     public BaseApiResult insert(@RequestBody CollectDTO collect, HttpServletRequest request) {
-        return collectServiceImpl.insert(setRelationshipValue(collect, request));
+        CollectDocRelationship relationship = setRelationshipValue(collect, request);
+        // 必须经过userId和docId的校验，否则不予关注
+        if (!userService.isExist(relationship.getUserId()) || !fileService.isExist(relationship.getDocId())) {
+            return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
+        }
+        return collectService.insert(relationship);
     }
 
     @ApiOperation(value = "根据id移除某个收藏文档", notes = "根据id移除某个文档")
     @DeleteMapping(value = "/auth/remove")
     public BaseApiResult remove(@RequestBody CollectDTO collect, HttpServletRequest request) {
-        return collectServiceImpl.remove(setRelationshipValue(collect, request));
+        return collectService.remove(setRelationshipValue(collect, request));
     }
 
     /**

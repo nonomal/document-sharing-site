@@ -19,6 +19,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.util.Date;
 
 /**
@@ -115,7 +117,10 @@ public class CategoryController {
 
     @ApiOperation(value = "3.7 查询所有的分类或者是标签", notes = "查询列表")
     @GetMapping(value = "/all")
-    public BaseApiResult list(@RequestParam FilterTypeEnum type) {
+    public BaseApiResult list(@RequestParam FilterTypeEnum type, HttpServletResponse response) {
+        // 设置响应头，缓存 10s
+        response.setHeader("Cache-Control", "max-age=10, public");
+
         switch (type) {
             case CATEGORY:
                 return categoryService.list();
@@ -177,5 +182,23 @@ public class CategoryController {
     public BaseApiResult getDocByTagCateKeyWord(@ModelAttribute("pageDTO") QueryDocByTagCateDTO pageDTO) {
         return categoryService.getDocByTagAndCate(pageDTO.getCateId(), pageDTO.getTagId(), pageDTO.getKeyword(),
                 Integer.toUnsignedLong(pageDTO.getPage() - 1), Integer.toUnsignedLong(pageDTO.getRows()));
+    }
+
+    @ApiOperation(value = "查询所有我收藏的文档", notes = "查询文档列表信息")
+    @GetMapping(value = "/auth/getMyCollection")
+    public BaseApiResult getMyCollection(@ModelAttribute("pageDTO") QueryDocByTagCateDTO pageDTO, HttpServletRequest request) {
+        String userId = (String) request.getAttribute("id");
+        return categoryService.getMyCollection(pageDTO.getCateId(), pageDTO.getTagId(), pageDTO.getKeyword(),
+                Integer.toUnsignedLong(pageDTO.getPage() - 1), Integer.toUnsignedLong(pageDTO.getRows()),
+                userId);
+    }
+
+    @ApiOperation(value = "查询所有我上传的文档", notes = "查询文档列表信息")
+    @GetMapping(value = "/auth/getMyUploaded")
+    public BaseApiResult getMyUploaded(@ModelAttribute("pageDTO") QueryDocByTagCateDTO pageDTO, HttpServletRequest request) {
+        String userId = (String) request.getAttribute("id");
+        return categoryService.getMyUploaded(pageDTO.getCateId(), pageDTO.getTagId(), pageDTO.getKeyword(),
+                Integer.toUnsignedLong(pageDTO.getPage() - 1), Integer.toUnsignedLong(pageDTO.getRows()),
+                userId);
     }
 }

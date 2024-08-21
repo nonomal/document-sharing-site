@@ -4,6 +4,7 @@ import com.jiaruiblog.auth.PermissionEnum;
 import com.jiaruiblog.common.MessageConstant;
 import com.jiaruiblog.config.SystemConfig;
 import com.jiaruiblog.entity.User;
+import com.jiaruiblog.entity.bo.UserBO;
 import com.jiaruiblog.entity.dto.BasePageDTO;
 import com.jiaruiblog.entity.dto.RegistryUserDTO;
 import com.jiaruiblog.entity.dto.UserRoleDTO;
@@ -21,6 +22,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
@@ -54,6 +56,13 @@ public class UserServiceImpl implements IUserService {
     @Resource
     private SystemConfig systemConfig;
 
+    /*
+     * @Author luojiarui
+     * @Description 初始化第一个用户，默认从配置中取到第一个管理员账号密码
+     * @Date 17:30 2024/7/23
+     * @Param []
+     * @return void
+     **/
     @Override
     public void initFirstUser() {
         RegistryUserDTO userDTO = new RegistryUserDTO();
@@ -101,6 +110,13 @@ public class UserServiceImpl implements IUserService {
         result.put(AVATAR, dbUser.getAvatar());
         result.put(USERNAME, dbUser.getUsername());
         result.put("type", dbUser.getPermissionEnum() != null ? dbUser.getPermissionEnum().toString() : null);
+
+        // 登录以后记录登录时间
+        Query query1 = new Query(Criteria.where("_id").is(dbUser.getId()));
+        Update update = new Update();
+        update.set("lastLogin", new Date());
+        mongoTemplate.updateFirst(query1, update, User.class, COLLECTION_NAME);
+
         return BaseApiResult.success(result);
 
     }
@@ -116,11 +132,11 @@ public class UserServiceImpl implements IUserService {
             user.setPassword(userDTO.getEncodePassword());
             user.setCreateDate(new Date());
             user.setUpdateDate(new Date());
+            user.setLastLogin(new Date());
             mongoTemplate.save(user, COLLECTION_NAME);
             return BaseApiResult.success(MessageConstant.SUCCESS);
         }
         return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.DATA_HAS_EXIST);
-
     }
 
     @Override
@@ -148,7 +164,6 @@ public class UserServiceImpl implements IUserService {
         return BaseApiResult.success(result);
     }
 
-
     @Override
     public BaseApiResult changeUserRole(UserRoleDTO userRoleDTO) {
         User user = mongoTemplate.findById(userRoleDTO.getUserId(), User.class, COLLECTION_NAME);
@@ -166,7 +181,7 @@ public class UserServiceImpl implements IUserService {
     @Override
     public BaseApiResult blockUser(String userId) {
         User user = queryById(userId);
-        if ( user == null) {
+        if (user == null) {
             return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
         }
         Query query = new Query();
@@ -185,12 +200,30 @@ public class UserServiceImpl implements IUserService {
      * @param userId 用户信息
      * @return 返回布尔
      */
+    @Override
     public boolean isExist(String userId) {
         if (userId == null || "".equals(userId)) {
             return false;
         }
         User user = queryById(userId);
         return user != null;
+    }
+
+    @Override
+    public boolean updateUserBySelf(UserBO user) {
+        Query query = new Query(Criteria.where("_id").is(user.getId()));
+        Update update = getUserUpdate(user);
+        UpdateResult updateResult1 = mongoTemplate.updateFirst(query, update, User.class, COLLECTION_NAME);
+        return updateResult1.getModifiedCount() > 0;
+    }
+
+    @Override
+    public boolean updateUserByAdmin(UserBO userBO) {
+        Query query = new Query().addCriteria(Criteria.where("_id").is(userBO.getId()));
+        Update update = getUserUpdate(userBO);
+        update.set(ROLE, Optional.ofNullable(userBO.getRole()).orElse(PermissionEnum.USER));
+        UpdateResult updateResult1 = mongoTemplate.updateFirst(query, update, User.class, COLLECTION_NAME);
+        return updateResult1.getModifiedCount() > 0;
     }
 
     /**
@@ -202,6 +235,13 @@ public class UserServiceImpl implements IUserService {
     @Override
     public User queryById(String userId) {
         return mongoTemplate.findById(userId, User.class, COLLECTION_NAME);
+    }
+
+    @Override
+    public User queryByUsername(String username) {
+        Query query = new Query(Criteria.where("username").is(username));
+        User one = mongoTemplate.findOne(query, User.class, COLLECTION_NAME);
+        return one;
     }
 
     /**
@@ -313,5 +353,67 @@ public class UserServiceImpl implements IUserService {
         return BaseApiResult.success(MessageConstant.SUCCESS);
     }
 
+    /**
+     * @return java.util.List<java.lang.String>
+     * @Author luojiarui
+     * @Description 根据用户id批量查询用户的头像信息
+     * @Date 22:41 2023/3/30
+     * @Param [userIdList]
+     **/
+    @Override
+    public Map<String, String> queryUserAvatarBatch(List<String> userIdList) {
+        if (CollectionUtils.isEmpty(userIdList) || userIdList.size() > 100) {
+            return new HashMap();
+        }
+        Query query = new Query(Criteria.where("_id").in(userIdList));
+        List<User> users = mongoTemplate.find(query, User.class, COLLECTION_NAME);
+        return users.stream().filter(item -> item.getId() != null && item.getAvatar() != null)
+                .collect(Collectors.toMap(User::getId, User::getAvatar, (v1, v2) -> v2));
+    }
+
+
+    @Override
+    public BaseApiResult resetUserPwd(String userId, String adminId) {
+        User user = mongoTemplate.findById(adminId, User.class, COLLECTION_NAME);
+        User resetUser = mongoTemplate.findById(userId, User.class, COLLECTION_NAME);
+        // 如果管理者是空的，或者管理者权限不够，均不能对用户进行重置！
+        if (user == null || user.getId() == null || user.getId().equals(userId)
+                || !PermissionEnum.ADMIN.equals(user.getPermissionEnum())
+                || resetUser == null
+        ) {
+            return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, MessageConstant.PARAMS_FORMAT_ERROR);
+        }
+
+        RegistryUserDTO userDTO = new RegistryUserDTO();
+        userDTO.setPassword(systemConfig.getInitialPassword());
+
+        Query query = new Query().addCriteria(Criteria.where("_id").is(userId));
+        Update update = new Update();
+        update.set("password", userDTO.getEncodePassword());
+        mongoTemplate.updateFirst(query, update, User.class, COLLECTION_NAME);
+
+        return BaseApiResult.success(MessageConstant.SUCCESS);
+    }
+
+    /**
+     * @Author luojiarui
+     * @Description 用户自行更新或者管理员更新用户信息的时候操作
+     * @Date 23:47 2024/7/26
+     * @Param [user]
+     * @return org.springframework.data.mongodb.core.query.Update
+     **/
+    private Update getUserUpdate(UserBO user) {
+        Update update = new Update();
+        if (StringUtils.hasText(user.getPassword())) {
+            update.set("password", user.getPassword());
+        }
+        update.set("phone", user.getPhone());
+        update.set("mail", user.getMail());
+        update.set("male", user.getMale());
+        update.set("description", user.getDescription());
+        update.set(UPDATE_TIME, new Date());
+        update.set("birthtime", user.getBirthtime());
+        return update;
+    }
 
 }

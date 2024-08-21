@@ -17,7 +17,7 @@ import java.util.Map;
 
 /**
  * @ClassName AuthenticationInterceptor
- * @Description 权限校验，拦截器
+ * @Description 权限校验，拦截器Interceptor, 拦截器在过滤器Filter之后
  * 参考文章： 注解式权限校验 https://blog.csdn.net/LitongZero/article/details/103628706
  * @Author luojiarui
  * @Date 2022/12/7 20:24
@@ -74,6 +74,10 @@ public class AuthenticationInterceptor implements HandlerInterceptor {
         }
         // 此处根据自己的系统架构，通过Token或Cookie等获取用户信息。
         User userInfo = userService.queryById(userData.get("id").asString());
+        if (userInfo == null || userInfo.getPermissionEnum() == null) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return false;
+        }
 
         // 获取该方法注解，优先级:方法注解>类注解
         PermissionEnum[] permissionEnums;

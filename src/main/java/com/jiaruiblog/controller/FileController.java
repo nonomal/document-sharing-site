@@ -3,37 +3,51 @@ package com.jiaruiblog.controller;
 import cn.hutool.core.io.IoUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.SecureUtil;
+import com.auth0.jwt.interfaces.Claim;
 import com.google.common.collect.Lists;
+import com.jiaruiblog.auth.PermissionEnum;
 import com.jiaruiblog.common.MessageConstant;
+import com.jiaruiblog.config.SystemConfig;
 import com.jiaruiblog.entity.FileDocument;
 import com.jiaruiblog.entity.ResponseModel;
+import com.jiaruiblog.entity.User;
+import com.jiaruiblog.entity.dto.BasePageDTO;
+import com.jiaruiblog.entity.dto.upload.FileUploadDTO;
+import com.jiaruiblog.entity.dto.upload.UrlUploadDTO;
 import com.jiaruiblog.enums.DocStateEnum;
+import com.jiaruiblog.intercepter.SensitiveFilter;
 import com.jiaruiblog.service.IFileService;
+import com.jiaruiblog.service.IUserService;
 import com.jiaruiblog.service.TaskExecuteService;
 import com.jiaruiblog.util.BaseApiResult;
 import com.jiaruiblog.util.FileContentTypeUtils;
+import com.jiaruiblog.util.JwtUtil;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.auth.AuthenticationException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
 import java.net.URLEncoder;
-import java.util.Date;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * @author jiarui.luo
  */
+@Api(tags = "查询文档详情的接口")
 @Slf4j
 @CrossOrigin(origins = "*", maxAge = 3600)
 @RestController
@@ -42,40 +56,59 @@ public class FileController {
 
     private static final String DOT = ".";
 
-    @Autowired
+    private static final String USERNAME = "username";
+
+    @Resource
     private IFileService fileService;
 
-    @Autowired
+    @Resource
     private TaskExecuteService taskExecuteService;
 
+    @Resource
+    private IUserService userService;
+
+    @Resource
+    SystemConfig systemConfig;
 
     /**
-     * 列表数据
-     *
-     * @param pageIndex
-     * @param pageSize
-     * @return
-     */
-    @RequestMapping("/list")
-    public List<FileDocument> list(int pageIndex, int pageSize) {
-        return fileService.listFilesByPage(pageIndex, pageSize);
+     * @return java.util.List<com.jiaruiblog.entity.FileDocument>
+     * @Author luojiarui
+     * @Description 列表数据
+     * @Date 22:41 2023/3/15
+     * @Param [basePageDTO]
+     **/
+    @ApiOperation(value = "查询列表", notes = "已经变更！")
+    @GetMapping("/list")
+    public List<FileDocument> list(@ModelAttribute BasePageDTO basePageDTO) {
+        return fileService.listFilesByPage(basePageDTO.getPage(), basePageDTO.getRows());
     }
 
     /**
      * 在线显示文件
      *
      * @param id 文件id
-     * @return
+     * @return 查询结果返回
      */
+    @ApiOperation(value = "查询文档预览结果")
     @GetMapping("/view/{id}")
-    public ResponseEntity<Object> serveFileOnline(@PathVariable String id) throws UnsupportedEncodingException {
+    public ResponseEntity<Object> serveFileOnline(@PathVariable String id,
+                                                  @RequestParam("token") String token,
+                                                  HttpServletResponse response)
+            throws UnsupportedEncodingException {
+        Map<String, Claim> userData = JwtUtil.verifyToken(token);
+        if (CollectionUtils.isEmpty(userData)) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return null;
+        }
         Optional<FileDocument> file = fileService.getById(id);
         if (file.isPresent()) {
             return ResponseEntity.ok()
                     // 这里需要进行中文编码
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "fileName=" + URLEncoder.encode(file.get().getName(), "utf-8"))
+                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                            "fileName=" + URLEncoder.encode(file.get().getName(), "utf-8"))
                     .header(HttpHeaders.CONTENT_TYPE, file.get().getContentType())
-                    .header(HttpHeaders.CONTENT_LENGTH, file.get().getSize() + "").header("Connection", "close")
+                    .header(HttpHeaders.CONTENT_LENGTH, file.get().getSize() + "")
+                    .header("Connection", "close")
                     .header(HttpHeaders.CONTENT_LENGTH, file.get().getSize() + "")
                     .body(file.get().getContent());
         } else {
@@ -87,7 +120,7 @@ public class FileController {
      * 在线显示文件
      *
      * @param id 文件id
-     * @return
+     * @return ResponseEntity<Object> 返回实体
      */
     @GetMapping("/view2/{id}")
     public ResponseEntity<Object> previewFileOnline(@PathVariable String id) throws UnsupportedEncodingException {
@@ -108,8 +141,8 @@ public class FileController {
     /**
      * 下载附件
      *
-     * @param id
-     * @return
+     * @param id 请求文件id
+     * @return ResponseEntity<Object>
      * @throws UnsupportedEncodingException
      */
     @GetMapping("/{id}")
@@ -180,7 +213,7 @@ public class FileController {
     /**
      * 表单上传文件
      * 当数据库中存在该md5值时，可以实现秒传功能
-     *
+     * <p>
      * 由于增加了用户登录后上传的验证，因此该方法废弃
      * 最新的上传方式使用：documentUpload
      *
@@ -237,16 +270,145 @@ public class FileController {
      * 当数据库中存在该md5值时，可以实现秒传功能
      *
      * @param file 文件
-     * @return
+     * @return BaseApiResult
      */
     @PostMapping("auth/upload")
     public BaseApiResult documentUpload(@RequestParam("file") MultipartFile file, HttpServletRequest request)
             throws AuthenticationException {
-        String username = (String) request.getAttribute("username");
+        String username = (String) request.getAttribute(USERNAME);
         String userId = (String) request.getAttribute("id");
+
+        User user = userService.queryById(userId);
+        if (user == null) {
+            throw new AuthenticationException();
+        }
+        // 用户非管理员且普通用户禁止
+        if (Boolean.TRUE.equals(!systemConfig.getUserUpload()) && user.getPermissionEnum() != PermissionEnum.ADMIN) {
+            throw new AuthenticationException();
+        }
+
         return fileService.documentUpload(file, userId, username);
     }
 
+    /**
+     * @return java.util.List<java.lang.String>
+     * @Author luojiarui
+     * @Description 批量上传文件
+     * @Date 23:12 2023/4/21
+     * @Param [req, files]
+     **/
+    @ApiOperation(value = "用户批量上传文件", notes = "需要文件分类标签信息！")
+    @PostMapping("/auth/uploadBatch")
+    public BaseApiResult uploadBatch(FileUploadDTO fileUploadDTO, HttpServletRequest request) {
+
+        String username = (String) request.getAttribute(USERNAME);
+        String userId = (String) request.getAttribute("id");
+
+        String category = fileUploadDTO.getCategory();
+        List<String> tags = fileUploadDTO.getTags();
+        String description = fileUploadDTO.getDescription();
+        Boolean skipError = fileUploadDTO.getSkipError();
+        MultipartFile[] files = fileUploadDTO.getFiles();
+
+        // 检查传递的参数是否正确
+        if (checkParam(tags, category, description, null).equals(Boolean.FALSE)
+                || files == null || files.length < 1) {
+            return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, MessageConstant.PARAMS_FORMAT_ERROR);
+        }
+        // 最多只能添加10个标签
+        if (!CollectionUtils.isEmpty(tags) && tags.size() > 10) {
+            tags = tags.subList(0, 10);
+        }
+        // 当只上传一个文档的时候，跳过错误肯定是False
+        if (files.length < 2) {
+            skipError = Boolean.FALSE;
+        }
+        return fileService.uploadBatch(category, tags, description, skipError, files, userId, username);
+    }
+
+    /**
+     * @return java.util.List<java.lang.String>
+     * @Author luojiarui
+     * @Description 通过url上传
+     * @Date 23:12 2023/4/21
+     * @Param [req, files]
+     **/
+    @ApiOperation(value = "根据用户的提供的url进行上传", notes = "需要提供url和文件分类标签信息！")
+    @PostMapping("/auth/uploadByUrl")
+    public BaseApiResult uploadByUrl(@RequestBody UrlUploadDTO urlUploadDTO, HttpServletRequest request) {
+
+        String username = (String) request.getAttribute(USERNAME);
+        String userId = (String) request.getAttribute("id");
+
+        String category = urlUploadDTO.getCategory();
+        List<String> tags = urlUploadDTO.getTags();
+        String description = urlUploadDTO.getDescription();
+        String url = urlUploadDTO.getUrl();
+        String name = urlUploadDTO.getName();
+
+        if (checkParam(tags, category, description, name).equals(Boolean.FALSE)) {
+            return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, MessageConstant.PARAMS_FORMAT_ERROR);
+        }
+        // 最多只能添加10个标签
+        if (!CollectionUtils.isEmpty(tags) && tags.size() > 10) {
+            tags = tags.subList(0, 10);
+        }
+        return fileService.uploadByUrl(category, tags, name, description, url, userId, username);
+    }
+
+    /**
+     * @return java.lang.Boolean
+     * @Author luojiarui
+     * @Description 文件上传时的参数检查：长度要求；格式要求；敏感词要求
+     * @Date 16:14 2023/4/22
+     * @Param [tags, category, description, name]
+     **/
+    private static Boolean checkParam(List<String> tags, String category, String description, String name) {
+
+        List<String> inputStrList = new ArrayList<>();
+        Optional.ofNullable(tags).ifPresent(value -> {
+            value.removeAll(Collections.singleton(null));
+            inputStrList.addAll(value);
+        });
+        Optional.ofNullable(category).ifPresent(inputStrList::add);
+        Optional.ofNullable(name).ifPresent(inputStrList::add);
+
+
+        // STEP.1 长度检查
+        for (String s : inputStrList) {
+            if (s.length() > 64) {
+                return Boolean.FALSE;
+            }
+        }
+        if (description != null && description.length() > 512) {
+            return Boolean.FALSE;
+        }
+        Optional.ofNullable(description).ifPresent(inputStrList::add);
+
+        try {
+
+            for (String s : inputStrList) {
+                if (s == null) {
+                    return Boolean.FALSE;
+                }
+                // STEP.2 正则检查，不能有换行，空字符串等
+                Matcher matcher = Pattern.compile("[\\s\\r\\n]+").matcher(s);
+                if (matcher.find()) {
+                    return Boolean.FALSE;
+                }
+                // STEP.3 敏感词检查
+                SensitiveFilter filter = SensitiveFilter.getInstance();
+                int n = filter.checkSensitiveWord(s, 0, 1);
+                // 存在非法字符
+                if (n > 0) {
+                    return Boolean.FALSE;
+                }
+            }
+        } catch (IOException | NullPointerException e) {
+            return Boolean.TRUE;
+        }
+        return Boolean.TRUE;
+    }
 
 
     /**
@@ -297,7 +459,14 @@ public class FileController {
      **/
     @GetMapping(value = "/image/{thumbId}", produces = MediaType.IMAGE_PNG_VALUE)
     @ResponseBody
-    public byte[] previewThumb(@PathVariable String thumbId) throws Exception {
+    public byte[] previewThumb(@PathVariable String thumbId,
+                               @RequestParam("token") String token,
+                               HttpServletResponse response) throws Exception {
+        Map<String, Claim> userData = JwtUtil.verifyToken(token);
+        if (CollectionUtils.isEmpty(userData)) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return new byte[]{};
+        }
         InputStream inputStream = fileService.getFileThumb(thumbId);
         FileInputStream fileInputStream = (FileInputStream) (inputStream);
         if (inputStream == null) {
@@ -341,7 +510,16 @@ public class FileController {
 
     @GetMapping(value = "/image2/{thumbId}", produces = MediaType.IMAGE_PNG_VALUE)
     @ResponseBody
-    public byte[] previewThumb2(@PathVariable String thumbId) {
+    public byte[] previewThumb2(@PathVariable String thumbId,
+                                @RequestParam("token") String token,
+                                HttpServletResponse response) {
+        Map<String, Claim> userData = JwtUtil.verifyToken(token);
+        if (CollectionUtils.isEmpty(userData)) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return new byte[]{};
+        }
+        // 设置响应头，缓存 1 小时
+        response.setHeader("Cache-Control", "max-age=3600, public");
         return fileService.getFileBytes(thumbId);
     }
 
@@ -383,11 +561,11 @@ public class FileController {
     }
 
     /**
+     * @return com.jiaruiblog.util.BaseApiResult
      * @Author luojiarui
      * @Description 重建文档索引，继续加入到列表中
      * @Date 22:19 2022/11/14
      * @Param [docId]
-     * @return com.jiaruiblog.util.BaseApiResult
      **/
     @GetMapping("/rebuildIndex")
     public BaseApiResult rebuildIndex(@RequestParam("docId") String docId) {
@@ -401,5 +579,56 @@ public class FileController {
         } else {
             return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
         }
+    }
+
+    @PostMapping("/temporaryFileDownloadLink")
+    public BaseApiResult temporaryFileDownloadLink() {
+
+//
+//        public class TemporaryFileDownloadLink {
+//
+//            private static final String REDIS_HOST = "localhost"; // Redis 服务器地址
+//            private static final int REDIS_PORT = 6379; // Redis 端口
+//
+//            public static void main(String[] args) {
+//                Jedis jedis = new Jedis(REDIS_HOST, REDIS_PORT);
+//
+//                // 生成一个随机的下载链接令牌
+//                String downloadToken = generateRandomToken();
+//
+//                // 设置下载链接有效期（例如，1小时，单位秒）
+//                int expirationSeconds = 3600;
+//
+//                // 存储下载链接信息到 Redis 中，包括文件信息和过期时间
+//                String fileKey = "download:" + downloadToken; // 使用前缀以区分不同类型的链接
+//                String fileUrl = "https://example.com/files/sample.pdf"; // 文件的实际下载链接
+
+        // jedis.setex 是 Redis 客户端库 Jedis 提供的方法，用于设置 Redis 中的键的过期时间。
+//                jedis.setex(fileKey, expirationSeconds, fileUrl);
+//
+//                System.out.println("Temporary download link: " + downloadToken);
+//
+//                // 模拟用户访问下载链接
+//                String userToken = "your_user_token"; // 用户提供的令牌
+//
+//                if (jedis.exists("download:" + userToken)) {
+//                    String downloadUrl = jedis.get("download:" + userToken);
+//                    System.out.println("Accessing download link: " + downloadUrl);
+//                    // 此时可以重定向用户到 downloadUrl 进行文件下载
+//                } else {
+//                    System.out.println("Invalid or expired download link.");
+//                }
+//
+//                jedis.close();
+//            }
+//
+//            private static String generateRandomToken() {
+//                // 生成一个随机的UUID作为下载链接令牌
+//                return UUID.randomUUID().toString();
+//            }
+//        }
+
+
+        return BaseApiResult.success();
     }
 }

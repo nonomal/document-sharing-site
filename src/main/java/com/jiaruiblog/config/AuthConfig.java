@@ -2,11 +2,12 @@ package com.jiaruiblog.config;
 
 import com.jiaruiblog.auth.AuthenticationInterceptor;
 import com.jiaruiblog.service.IUserService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurationSupport;
+
+import javax.annotation.Resource;
 
 /**
  * @ClassName AuthConfig
@@ -19,7 +20,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurationSupp
 @Configuration
 public class AuthConfig extends WebMvcConfigurationSupport {
 
-    @Autowired
+    @Resource
     IUserService userService;
 
     /**

@@ -8,9 +8,11 @@ import org.springframework.http.converter.HttpMessageConversionException;
 import org.springframework.validation.BindException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import javax.servlet.http.HttpServletResponse;
@@ -45,8 +47,8 @@ public class CommonExceptionHandler {
      */
     @ExceptionHandler(value = MethodArgumentNotValidException.class)
     public BaseApiResult dealMethodArgumentNotValidException(MethodArgumentNotValidException e) {
-        String defaultMessage = e.getBindingResult().getFieldError().getDefaultMessage();
-        return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, defaultMessage);
+        e.printStackTrace();
+        return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, "参数异常");
     }
 
     /**
@@ -58,8 +60,8 @@ public class CommonExceptionHandler {
      **/
     @ExceptionHandler(BindException.class)
     public BaseApiResult handleValidation(BindException e) {
-        String defaultMessage = e.getFieldError().getDefaultMessage();
-        return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, defaultMessage);
+        e.printStackTrace();
+        return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, "请求异常，请检查");
     }
 
     /**
@@ -79,6 +81,7 @@ public class CommonExceptionHandler {
      */
     @ExceptionHandler(HttpMessageConversionException.class)
     public BaseApiResult parameterTypeException(HttpMessageConversionException exception) {
+        exception.printStackTrace();
         return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, "类型转换错误");
     }
 
@@ -105,6 +108,19 @@ public class CommonExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public void dealAuthenticationException(HttpServletResponse response) {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+    }
+
+    /**
+     * @Author luojiarui
+     * @Description 管理员设置的禁止操作的错误
+     * @Date 21:18 2022/12/9
+     * @Param [e]
+     **/
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public BaseApiResult dealAuthenticationException(MissingServletRequestParameterException e, HandlerMethod handlerMethod) {
+        String errorMessage = String.format("MissingServletRequestParameterException（遗漏Servlet请求参数异常）：%s",
+                e.getMessage());
+        return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, errorMessage);
     }
 
 }

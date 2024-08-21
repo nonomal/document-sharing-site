@@ -3,6 +3,7 @@ package com.jiaruiblog.service;
 import com.jiaruiblog.entity.FileDocument;
 import com.jiaruiblog.entity.dto.BasePageDTO;
 import com.jiaruiblog.entity.dto.DocumentDTO;
+import com.jiaruiblog.entity.dto.document.UpdateInfoDTO;
 import com.jiaruiblog.enums.DocStateEnum;
 import com.jiaruiblog.task.exception.TaskRunException;
 import com.jiaruiblog.util.BaseApiResult;
@@ -14,6 +15,7 @@ import java.io.InputStream;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 
 /**
@@ -33,6 +35,15 @@ public interface IFileService {
 
 
     BaseApiResult documentUpload(MultipartFile file, String userId, String username) throws AuthenticationException;
+
+    BaseApiResult uploadBatch(String category, List<String> tags, String description,
+                              Boolean skipError, MultipartFile[] files,
+                              String userId, String username);
+
+    BaseApiResult uploadByUrl(String category, List<String> tags, String name,
+                              String description, String url,
+                              String userId, String username);
+
 
     /**
      * 保存文件 - js文件流
@@ -101,6 +112,8 @@ public interface IFileService {
      */
     FileDocument getByMd5(String md5);
 
+    List<FileDocument> getByMd5Set(Set<String> md5Set);
+
     /**
      * queryById
      * @param docId String
@@ -143,6 +156,13 @@ public interface IFileService {
     BaseApiResult list(DocumentDTO documentDTO);
 
     /**
+     * 分页检索目前的文档信息
+     * @param documentDTO DocumentDTO
+     * @return result
+     */
+    BaseApiResult listNew(DocumentDTO documentDTO);
+
+    /**
      *根据文档的详情，查询该文档的详细信息
      *
      * @param id ->Long
@@ -153,10 +173,20 @@ public interface IFileService {
     /**
      * 删除掉已经存在的文档
      *
-     * @param id -> Long
+     * @param fileDocument -> 文档信息
      * @return ApiResult
      */
-    BaseApiResult remove(String id);
+    BaseApiResult remove(FileDocument fileDocument);
+
+    /**
+     * @Author luojiarui
+     * @Description 管理员对文档的基本信息进行修改
+     * @Date 23:17 2023/6/28
+     * @Param [updateInfoDTO]
+     * @return com.jiaruiblog.util.BaseApiResult
+     **/
+    BaseApiResult updateInfo(UpdateInfoDTO updateInfoDTO);
+
 
     BaseApiResult listWithCategory(DocumentDTO documentDTO);
 
@@ -184,6 +214,15 @@ public interface IFileService {
      * 保存文件流到dfs系统中
      **/
     String uploadFileToGridFs(String prefix, InputStream in, String contentType);
+
+    /**
+     * @Author luojiarui
+     * @Description // 通过文档id查询文档详情信息
+     * @Date 22:28 2024/7/21
+     * @Param [docId]
+     * @return java.util.List<com.jiaruiblog.entity.FileDocument>
+     **/
+    List<FileDocument> queryByDocIds(String ...docId);
 
     /**
      * @Author luojiarui
@@ -220,4 +259,8 @@ public interface IFileService {
      * @return com.jiaruiblog.util.BaseApiResult
      **/
     BaseApiResult queryFileDocumentResult(BasePageDTO pageDTO, boolean reviewing);
+
+    long countAllFile();
+
+    boolean isExist(String docId);
 }

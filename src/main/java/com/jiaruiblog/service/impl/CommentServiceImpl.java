@@ -10,12 +10,12 @@ import com.jiaruiblog.entity.dto.CommentWithUserDTO;
 import com.jiaruiblog.entity.vo.CommentWithUserVO;
 import com.jiaruiblog.intercepter.SensitiveFilter;
 import com.jiaruiblog.service.ICommentService;
+import com.jiaruiblog.service.IUserService;
 import com.jiaruiblog.util.BaseApiResult;
 import com.mongodb.client.result.DeleteResult;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.utils.Lists;
 import org.springframework.beans.BeanUtils;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -28,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import javax.annotation.Resource;
 import java.io.IOException;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -51,9 +52,11 @@ public class CommentServiceImpl implements ICommentService {
 
     private static final String OBJECT_ID = "_id";
 
-    @Autowired
+    @Resource
     MongoTemplate template;
 
+    @Resource
+    IUserService userService;
 
     @Override
     public BaseApiResult insert(Comment comment) {
@@ -155,9 +158,20 @@ public class CommentServiceImpl implements ICommentService {
         query.limit(comment.getRows());
         // 这里应该联合查询，根据评论的id查询到评论的用户，再根据用户查询头像信息
         List<Comment> comments = template.find(query, Comment.class, COLLECTION_NAME);
+        // 通过comment的id查询用户的头像信息
+        List<String> userId = comments.stream().map(Comment::getUserId).collect(Collectors.toList());
+        Map<String, String> userAvatarMap = userService.queryUserAvatarBatch(userId);
+        List<CommentWithUserVO> commentWithUserVOList = new ArrayList<>();
+        for (Comment item : comments) {
+            CommentWithUserVO commentWithUserVO = new CommentWithUserVO();
+            BeanUtils.copyProperties(item, commentWithUserVO);
+            commentWithUserVO.setUserAvatarId(userAvatarMap.get(item.getUserId()));
+            commentWithUserVOList.add(commentWithUserVO);
+        }
+
         Map<String, Object> result = Maps.newHashMap();
         result.put("totalNum", totalNum);
-        result.put("comments", comments);
+        result.put("comments", commentWithUserVOList);
 
         return BaseApiResult.success(result);
     }
@@ -174,6 +188,7 @@ public class CommentServiceImpl implements ICommentService {
      * @Param [docId]
      * @return java.lang.Long
      **/
+    @Override
     public Long commentNum(String docId) {
         Query query = new Query().addCriteria(Criteria.where(DOC_ID).is(docId));
         return template.count(query, Comment.class, COLLECTION_NAME);
@@ -184,6 +199,7 @@ public class CommentServiceImpl implements ICommentService {
      * @param keyWord 关键字
      * @return 文档的id信息
      */
+    @Override
     public List<String> fuzzySearchDoc(String keyWord) {
         if(keyWord == null || "".equalsIgnoreCase(keyWord)) {
             return Lists.newArrayList();
@@ -199,15 +215,14 @@ public class CommentServiceImpl implements ICommentService {
 
     /**
      * @Author luojiarui
-     * @Description //根据文档进行删除评论信息
+     * @Description 根据文档进行删除评论信息
      * @Date 11:14 上午 2022/6/25
      * @Param [docId]
      **/
+    @Override
     public void removeByDocId(String docId) {
         Query query = new Query(Criteria.where(DOC_ID).is(docId));
-        List<Comment> commentDb = template.find(query, Comment.class, COLLECTION_NAME);
-        commentDb.forEach(item -> template.remove(item, COLLECTION_NAME));
-
+        template.remove(query, Comment.class, COLLECTION_NAME);
     }
 
     /**
@@ -217,6 +232,7 @@ public class CommentServiceImpl implements ICommentService {
      * @Param []
      * @return java.lang.Integer
      **/
+    @Override
     public long countAllFile() {
         return template.getCollection(COLLECTION_NAME).estimatedDocumentCount();
     }
@@ -233,7 +249,7 @@ public class CommentServiceImpl implements ICommentService {
 
         log.info("查询的参数是：{}, {}", page, userId);
         Criteria criteria = new Criteria();
-        if (!isAdmin) {
+        if (Boolean.FALSE.equals(isAdmin)) {
             criteria = Criteria.where("userId").is(userId);
         }
 

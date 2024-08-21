@@ -2,8 +2,10 @@ package com.jiaruiblog.service;
 
 import com.jiaruiblog.entity.CateDocRelationship;
 import com.jiaruiblog.entity.Category;
-
+import com.jiaruiblog.entity.vo.CategoryVO;
 import com.jiaruiblog.util.BaseApiResult;
+
+import java.util.List;
 
 /**
  * @Author Jarrett Luo
@@ -77,6 +79,51 @@ public interface CategoryService {
      * @Param []
      * @return com.jiaruiblog.util.BaseApiResult
      **/
-    BaseApiResult getDocByTagAndCate(String cateId, String tagId, String keyword, Long pageNum, Long pageSize);
+    BaseApiResult getDocByTagAndCate(String cateId, String tagId, String keyword,
+                                     Long pageNum, Long pageSize);
+
+    /**
+     * @Author luojiarui
+     * @Description 更具文档的分类和标签、关键字进行联合查询
+     * @Date 23:20 2023/1/4
+     * @Param []
+     * @return com.jiaruiblog.util.BaseApiResult
+     **/
+    BaseApiResult getMyCollection(String cateId, String tagId, String keyword,
+                                     Long pageNum, Long pageSize, String userId);
+
+    /**
+     * @Author luojiarui
+     * @Description 更具文档的分类和标签、关键字进行联合查询
+     * @Date 23:20 2023/1/4
+     * @Param []
+     * @return com.jiaruiblog.util.BaseApiResult
+     **/
+    BaseApiResult getMyUploaded(String cateId, String tagId, String keyword,
+                                     Long pageNum, Long pageSize, String userId);
+
+    List<Category> getRandom();
+
+    void addRelationShipDefault(String categoryId, String docId);
+
+    void addRelationShipDefault(String categoryId, List<String> docIds);
+
+
+
+    List<CateDocRelationship> getRelateByCateId(String cateId);
+
+    long countAllFile();
+
+    String saveOrUpdateCate(String cateName);
+
+    void removeRelateByDocId(String docId);
+
+    List<String> fuzzySearchDoc(String keyWord);
+
+    Category queryById(String id);
+
+    List<String> queryDocListByCategory(Category categoryDb);
+
+    CategoryVO queryByDocId(String docId);
 
 }

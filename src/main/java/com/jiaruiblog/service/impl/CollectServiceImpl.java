@@ -5,12 +5,12 @@ import com.jiaruiblog.entity.CollectDocRelationship;
 import com.jiaruiblog.service.CollectService;
 import com.jiaruiblog.util.BaseApiResult;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.Resource;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,18 +23,12 @@ import java.util.Optional;
 @Service
 public class CollectServiceImpl implements CollectService {
 
-    private static final String COLLECTION_NAME = "collectCollection";
+    public static final String COLLECTION_NAME = "collectCollection";
 
     private static final String DOC_ID = "docId";
 
-    @Autowired
+    @Resource
     MongoTemplate mongoTemplate;
-
-    @Autowired
-    UserServiceImpl userServiceImpl;
-
-    @Autowired
-    FileServiceImpl fileServiceImpl;
 
     /**
      * @return com.jiaruiblog.utils.ApiResult
@@ -45,17 +39,21 @@ public class CollectServiceImpl implements CollectService {
      **/
     @Override
     public BaseApiResult insert(CollectDocRelationship collect) {
-        // 必须经过userId和docId的校验，否则不予关注
-        if (!userServiceImpl.isExist(collect.getUserId()) || !fileServiceImpl.isExist(collect.getDocId())) {
+        Boolean aBoolean = insertRelationShip(collect);
+        if (Boolean.FALSE.equals(aBoolean)) {
             return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
         }
+        return BaseApiResult.success(MessageConstant.SUCCESS);
+    }
 
+    @Override
+    public Boolean insertRelationShip(CollectDocRelationship collect) {
         CollectDocRelationship collectDb = getExistRelationship(collect);
         if (collectDb != null) {
-            return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
+            return false;
         }
         mongoTemplate.save(collect, COLLECTION_NAME);
-        return BaseApiResult.success(MessageConstant.SUCCESS);
+        return true;
     }
 
     /**
@@ -84,7 +82,6 @@ public class CollectServiceImpl implements CollectService {
      **/
     private CollectDocRelationship getExistRelationship(CollectDocRelationship collect) {
         collect = Optional.ofNullable(collect).orElse(new CollectDocRelationship());
-
         Query query = new Query()
                 .addCriteria(Criteria.where(DOC_ID).is(collect.getDocId())
                         .and("userId").is(collect.getUserId()));
@@ -101,6 +98,7 @@ public class CollectServiceImpl implements CollectService {
      * @Date 22:35 2022/9/24
      * @Param [docId]
      **/
+    @Override
     public Long collectNum(String docId) {
         Query query = new Query().addCriteria(Criteria.where(DOC_ID).is(docId));
         return mongoTemplate.count(query, CollectDocRelationship.class, COLLECTION_NAME);
@@ -112,6 +110,7 @@ public class CollectServiceImpl implements CollectService {
      * @Date 11:17 上午 2022/6/25
      * @Param [docId]
      **/
+    @Override
     public void removeRelateByDocId(String docId) {
         Query query = new Query(Criteria.where(DOC_ID).is(docId));
         List<CollectDocRelationship> relationships = mongoTemplate.find(query, CollectDocRelationship.class,

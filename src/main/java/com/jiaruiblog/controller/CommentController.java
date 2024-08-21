@@ -15,7 +15,6 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -73,7 +72,8 @@ public class CommentController {
         return commentService.remove(comment, userId);
     }
 
-    @ApiOperation(value = "根据id列表移除批量评论", notes = "根据id移除批量评论")
+    @Permission(value = PermissionEnum.ADMIN)
+    @ApiOperation(value = "根据id列表移除批量评论", notes = "管理员才能进行此项操作根据id移除批量评论")
     @DeleteMapping(value = "/auth/removeBatch")
     public BaseApiResult removeBatch(@RequestBody BatchIdDTO batchIdDTO) {
         List<String> commentIdList = batchIdDTO.getIds();

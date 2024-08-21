@@ -2,6 +2,8 @@ package com.jiaruiblog.controller;
 
 import com.jiaruiblog.auth.Permission;
 import com.jiaruiblog.auth.PermissionEnum;
+import com.jiaruiblog.common.MessageConstant;
+import com.jiaruiblog.entity.FileDocument;
 import com.jiaruiblog.entity.dto.BasePageDTO;
 import com.jiaruiblog.entity.dto.BatchIdDTO;
 import com.jiaruiblog.entity.dto.RefuseBatchDTO;
@@ -12,12 +14,15 @@ import com.jiaruiblog.util.BaseApiResult;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.CollectionUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * 文档评审，日志查询
@@ -84,7 +89,15 @@ public class DocReviewController {
     public BaseApiResult refuse(@RequestBody @Validated RefuseDTO refuseDTO) {
         String docId = refuseDTO.getDocId();
         String reason = refuseDTO.getReason();
-        return docReviewService.refuse(docId, reason);
+        if (docReviewService.docIdExist(Collections.singletonList(docId))) {
+            return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
+        }
+        // 校验某个文档是否存在, 查询并删除某个文档
+        List<FileDocument> fileDocumentList = fileService.queryAndRemove(docId);
+        if (CollectionUtils.isEmpty(fileDocumentList)) {
+            return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
+        }
+        return docReviewService.refuse(fileDocumentList.get(0), reason);
     }
 
     /**
@@ -98,7 +111,16 @@ public class DocReviewController {
     @ApiOperation(value = "管理员拒绝一批文档", notes = "管理员拒绝一批文档，只有管理员有操作该文档的权限")
     @PostMapping("refuseBatch")
     public BaseApiResult refuseBatch(@RequestBody @Valid RefuseBatchDTO refuseBatchDTO) {
-        return docReviewService.refuseBatch(refuseBatchDTO.getIds(), refuseBatchDTO.getReason());
+        List<String> docIds = refuseBatchDTO.getIds();
+        String reason = refuseBatchDTO.getReason();
+        if (docReviewService.docIdExist(docIds)) {
+            return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
+        }
+        List<FileDocument> fileDocumentList = fileService.queryAndRemove(docIds.toArray(new String[0]));
+        if (CollectionUtils.isEmpty(fileDocumentList)) {
+            return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
+        }
+        return docReviewService.refuseBatch(fileDocumentList, reason);
     }
 
     /**
@@ -112,7 +134,15 @@ public class DocReviewController {
     @ApiOperation(value = "同意某一批文档", notes = "管理员同意某一批文档")
     @PostMapping("approve")
     public BaseApiResult approve(@RequestBody @Valid BatchIdDTO batchIdDTO) {
-        return docReviewService.approveBatch(batchIdDTO.getIds());
+        List<String> docIds = batchIdDTO.getIds();
+        if (docReviewService.docIdExist(docIds)) {
+            return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
+        }
+        List<FileDocument> fileDocumentList = fileService.queryAndUpdate(docIds.toArray(new String[0]));
+        if (CollectionUtils.isEmpty(fileDocumentList)) {
+            return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
+        }
+        return docReviewService.approveBatch(fileDocumentList);
     }
 
     /**
@@ -152,6 +182,9 @@ public class DocReviewController {
     @ApiOperation(value = "删除评审日志", notes = "管理员和普通用户都可以删除评审结果")
     @DeleteMapping("removeDocReview")
     public BaseApiResult removeDocReview(@RequestBody @Valid BatchIdDTO batchIdDTO, HttpServletRequest request) {
+        if (CollectionUtils.isEmpty(batchIdDTO.getIds())) {
+            return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, MessageConstant.PARAMS_IS_NOT_NULL);
+        }
         return docReviewService.deleteReviewsBatch(batchIdDTO.getIds(), (String) request.getAttribute("id"));
     }
 

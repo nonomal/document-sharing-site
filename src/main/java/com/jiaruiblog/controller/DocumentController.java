@@ -1,10 +1,13 @@
 package com.jiaruiblog.controller;
 
+import com.jiaruiblog.auth.Permission;
+import com.jiaruiblog.auth.PermissionEnum;
 import com.jiaruiblog.common.MessageConstant;
 import com.jiaruiblog.entity.FileDocument;
 import com.jiaruiblog.entity.User;
 import com.jiaruiblog.entity.dto.DocumentDTO;
 import com.jiaruiblog.entity.dto.RemoveObjectDTO;
+import com.jiaruiblog.entity.dto.document.UpdateInfoDTO;
 import com.jiaruiblog.enums.FilterTypeEnum;
 import com.jiaruiblog.intercepter.SensitiveFilter;
 import com.jiaruiblog.service.IDocLogService;
@@ -61,6 +64,8 @@ public class DocumentController {
             int n = filter.checkSensitiveWord(filterWord, 0, 1);
             //存在非法字符
             if (n > 0) {
+                // todo 非法字符的计算可能不准确：
+                // NullPointer， Null， java， on
                 log.error("这个人输入了非法字符--> {},不知道他到底要查什么~", filterWord);
             } else {
                 redisService.incrementScoreByUserId(filterWord, RedisServiceImpl.SEARCH_KEY);
@@ -70,6 +75,32 @@ public class DocumentController {
             }
         }
         return iFileService.list(documentDTO);
+    }
+
+    @ApiOperation(value = "2.1 查询文档的分页列表页,限制了分类和标签", notes = "根据参数查询文档列表")
+    @PostMapping(value = "/listNew")
+    public BaseApiResult listNew(@RequestBody DocumentDTO documentDTO)
+            throws IOException {
+        String userId = documentDTO.getUserId();
+        if (StringUtils.hasText(documentDTO.getFilterWord()) &&
+                documentDTO.getType() == FilterTypeEnum.FILTER) {
+            String filterWord = documentDTO.getFilterWord();
+            //非法敏感词汇判断
+            SensitiveFilter filter = SensitiveFilter.getInstance();
+            int n = filter.checkSensitiveWord(filterWord, 0, 1);
+            //存在非法字符
+            if (n > 0) {
+                // todo 非法字符的计算可能不准确：
+                // NullPointer， Null， java， on
+                log.error("这个人输入了非法字符--> {},不知道他到底要查什么~", filterWord);
+            } else {
+                redisService.incrementScoreByUserId(filterWord, RedisServiceImpl.SEARCH_KEY);
+                if (StringUtils.hasText(userId)) {
+                    redisService.addSearchHistoryByUserId(userId, filterWord);
+                }
+            }
+        }
+        return iFileService.listNew(documentDTO);
     }
 
     @ApiOperation(value = "2.2 查询文档的详细信息", notes = "查询文档的详细信息")
@@ -91,7 +122,14 @@ public class DocumentController {
         user.setUsername(username);
         user.setId(userId);
         docLogService.addLog(user, fileDocument, DocLogServiceImpl.Action.DELETE);
-        return iFileService.remove(removeObjectDTO.getId());
+        return iFileService.remove(fileDocument);
+    }
+
+    @ApiOperation(value = "3.2 管理员修改文档基本信息", notes = "管理员修改某个文档信息")
+    @PutMapping(value="/auth/updateInfo")
+    @Permission(value = PermissionEnum.ADMIN)
+    public BaseApiResult updateInfo(@RequestBody UpdateInfoDTO updateInfoDTO) {
+        return iFileService.updateInfo(updateInfoDTO);
     }
 
 

@@ -5,13 +5,22 @@ import com.jiaruiblog.common.MessageConstant;
 import com.jiaruiblog.entity.FileDocument;
 import com.jiaruiblog.entity.Tag;
 import com.jiaruiblog.entity.TagDocRelationship;
+import com.jiaruiblog.entity.vo.CateOrTagVO;
 import com.jiaruiblog.entity.vo.TagVO;
+import com.jiaruiblog.service.IFileService;
 import com.jiaruiblog.service.TagService;
 import com.jiaruiblog.util.BaseApiResult;
+import com.mongodb.client.result.DeleteResult;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.compress.utils.Lists;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.aggregation.ConvertOperators;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
@@ -31,6 +40,7 @@ import java.util.stream.Collectors;
  * @Version 1.0
  */
 @Slf4j
+@Lazy
 @Service
 public class TagServiceImpl implements TagService {
 
@@ -42,8 +52,20 @@ public class TagServiceImpl implements TagService {
 
     private static final String TAG_ID = "tagId";
 
+    public static final String DOC_ID = "docId";
+
+    private static final String OBJECT_ID = "_id";
+
     @Resource
     MongoTemplate mongoTemplate;
+
+    private IFileService fileService;
+
+    // 通过属性注入，防止循环依赖
+    @Autowired
+    private void setFileService(IFileService iFileService) {
+        this.fileService = iFileService;
+    }
 
     @Override
     public BaseApiResult insert(Tag tag) {
@@ -68,12 +90,42 @@ public class TagServiceImpl implements TagService {
         if(isTagExist(tag.getName())) {
             return BaseApiResult.error(MessageConstant.PROCESS_ERROR_CODE, MessageConstant.OPERATE_FAILED);
         }
-        Query query = new Query(Criteria.where("_id").is(tag.getId()));
+        Query query = new Query(Criteria.where(OBJECT_ID).is(tag.getId()));
         Update update  = new Update();
         update.set("name", tag.getName());
         update.set("updateTime",tag.getUpdateDate());
         mongoTemplate.updateFirst(query, update, Tag.class, COLLECTION_NAME);
         return BaseApiResult.success(MessageConstant.SUCCESS);
+    }
+
+    @Override
+    public List<String> saveOrUpdateBatch(List<String> tags) {
+        if (CollectionUtils.isEmpty(tags)) {
+            return new ArrayList<>();
+        }
+        tags = tags.stream().filter(Objects::nonNull).collect(Collectors.toList());
+        if (CollectionUtils.isEmpty(tags)) {
+            return new ArrayList<>();
+        }
+        List<Tag> existedTags = queryTagListByNameList(tags.toArray(new String[0]));
+        List<String> existedTagIdList = existedTags.stream().map(Tag::getId).collect(Collectors.toList());
+        List<String> existedTagNameList = existedTags.stream().map(Tag::getName).collect(Collectors.toList());
+        tags.removeAll(existedTagNameList);
+        List<String> newTagNameList = tags;
+
+        // 批量新建不存在的tag信息
+        List<Tag> newTags = new ArrayList<>();
+        for (String s : newTagNameList) {
+            Tag tag = new Tag();
+            tag.setUpdateDate(new Date());
+            tag.setName(s);
+            tag.setCreateDate(new Date());
+            newTags.add(tag);
+        }
+        Collection<Tag> insertedTags = mongoTemplate.insert(newTags, COLLECTION_NAME);
+        List<String> newTagIdList = insertedTags.stream().map(Tag::getId).collect(Collectors.toList());
+        existedTagIdList.addAll(newTagIdList);
+        return existedTagIdList;
     }
 
     /**
@@ -89,7 +141,7 @@ public class TagServiceImpl implements TagService {
             return BaseApiResult.error(MessageConstant.PARAMS_ERROR_CODE, MessageConstant.PARAMS_FORMAT_ERROR);
         }
         Query query1 = new Query();
-        query1.addCriteria(Criteria.where("_id").is(tag.getId()));
+        query1.addCriteria(Criteria.where(OBJECT_ID).is(tag.getId()));
         mongoTemplate.remove(query1, Tag.class, COLLECTION_NAME);
 
         // 同时去除掉各种关系的数据
@@ -118,7 +170,7 @@ public class TagServiceImpl implements TagService {
      * @return java.util.List<com.jiaruiblog.entity.Tag>
      **/
     public List<Tag> queryByIds(List<String> tagIds) {
-        Query query = new Query(Criteria.where("_id").in(tagIds));
+        Query query = new Query(Criteria.where(OBJECT_ID).in(tagIds));
         return Optional.of(mongoTemplate.find(query, Tag.class, COLLECTION_NAME)).orElse(Lists.newArrayList());
     }
 
@@ -130,8 +182,23 @@ public class TagServiceImpl implements TagService {
 
     @Override
     public BaseApiResult list() {
-        List<Tag> tags = mongoTemplate.findAll(Tag.class, COLLECTION_NAME);
-        return BaseApiResult.success(tags);
+        Aggregation aggregation = Aggregation.newAggregation(
+                // 选择某些字段
+                Aggregation.project("id", "name", "createDate", "updateDate")
+                        .and(ConvertOperators.Convert.convertValue("$_id").to("string"))//将主键Id转换为objectId
+                        .as("id"),//新字段名称,
+                Aggregation.lookup(RELATE_COLLECTION_NAME, "id", "tagId", "abc"),
+                Aggregation.project("id", "name", "createDate", "updateDate")
+                        .and("abc")
+                        .size()
+                        .as("num"),
+                Aggregation.sort(Sort.Direction.ASC, "updateDate")
+        );
+
+        AggregationResults<CateOrTagVO> result = mongoTemplate.aggregate(
+                aggregation, COLLECTION_NAME, CateOrTagVO.class);
+        List<CateOrTagVO> resultList = result.getMappedResults();
+        return BaseApiResult.success(resultList);
     }
 
     /**
@@ -141,6 +208,7 @@ public class TagServiceImpl implements TagService {
      * @Param [id]
      * @return com.jiaruiblog.entity.Tag
      **/
+    @Override
     public Tag queryByTagId(String id) {
         if( !StringUtils.hasText(id)) {
             return null;
@@ -185,6 +253,7 @@ public class TagServiceImpl implements TagService {
      * @Param [id]
      * @return java.util.List<com.jiaruiblog.entity.vo.TagVO>
      **/
+    @Override
     public List<TagVO> queryByDocId(String id) {
         List<TagVO> tagVOList = new ArrayList<>();
         Query query = new Query().addCriteria(Criteria.where(FILE_ID).is(id));
@@ -282,6 +351,7 @@ public class TagServiceImpl implements TagService {
      * @Param [tagId]
      * @return java.util.List<java.lang.Long>
      **/
+    @Override
     public List<String> queryDocIdListByTagId(String tagId) {
         Query query = new Query().addCriteria(Criteria.where(TAG_ID).is(tagId));
         List<TagDocRelationship> relationships = mongoTemplate.find(query, TagDocRelationship.class, RELATE_COLLECTION_NAME);
@@ -293,6 +363,7 @@ public class TagServiceImpl implements TagService {
      * @param keyWord 关键字
      * @return 文档的id信息
      */
+    @Override
     public List<String> fuzzySearchDoc(String keyWord) {
         if( keyWord == null || "".equalsIgnoreCase(keyWord)) {
             return Lists.newArrayList();
@@ -335,6 +406,23 @@ public class TagServiceImpl implements TagService {
         return mongoTemplate.find(query, Tag.class, COLLECTION_NAME);
     }
 
+    /**
+     * @Author luojiarui
+     * @Description 通过列表查询全部的标签信息
+     * @Date 15:56 2023/4/22
+     * @Param [name]
+     * @return java.util.List<com.jiaruiblog.entity.Tag>
+     *
+     * @param name
+     * */
+    public List<Tag> queryTagListByNameList(String... name) {
+        List<String> nameList = Arrays.asList(name);
+        if (CollectionUtils.isEmpty(nameList)) {
+            return Lists.newArrayList();
+        }
+        return mongoTemplate.find(Query.query(Criteria.where("name").in(nameList)), Tag.class, COLLECTION_NAME);
+    }
+
 
     /**
      * @Author luojiarui
@@ -342,11 +430,10 @@ public class TagServiceImpl implements TagService {
      * @Date 11:22 上午 2022/6/25
      * @Param [docId]
      **/
+    @Override
     public void removeRelateByDocId(String docId) {
-        Query query = new Query(Criteria.where("docId").is(docId));
-        List<TagDocRelationship> relationships = mongoTemplate.find(query, TagDocRelationship.class,
-                RELATE_COLLECTION_NAME);
-        relationships.forEach(this::cancelTagRelationship);
+        Query query = new Query(Criteria.where(DOC_ID).is(docId));
+        mongoTemplate.remove(query, TagDocRelationship.class, RELATE_COLLECTION_NAME);
     }
 
     /**
@@ -356,6 +443,7 @@ public class TagServiceImpl implements TagService {
      * @Param []
      * @return java.lang.Integer
      **/
+    @Override
     public long countAllFile() {
         return mongoTemplate.getCollection(COLLECTION_NAME).estimatedDocumentCount();
     }
@@ -367,6 +455,7 @@ public class TagServiceImpl implements TagService {
      * @Param [fileDocument]
      **/
     @Async
+    @Override
     public void saveTagWhenSaveDoc(FileDocument fileDocument) {
         if(fileDocument == null || !StringUtils.hasText(fileDocument.getSuffix())) {
             return;
@@ -391,12 +480,73 @@ public class TagServiceImpl implements TagService {
             tag = tags.get(0);
         }
         if (tag.getId() != null) {
-            TagDocRelationship tagDocRelationship = new TagDocRelationship();
-            tagDocRelationship.setTagId(tag.getId());
-            tagDocRelationship.setFileId(fileDocument.getId());
-            tagDocRelationship.setCreateDate(new Date());
-            tagDocRelationship.setUpdateDate(new Date());
-            addRelationShip(tagDocRelationship);
+            addRelationShip(getRelationInstance(tag.getId(), fileDocument.getId()));
+        }
+    }
+
+    private TagDocRelationship getRelationInstance(String tagId, String docId) {
+        TagDocRelationship tagDocRelationship = new TagDocRelationship();
+        tagDocRelationship.setTagId(tagId);
+        tagDocRelationship.setFileId(docId);
+        tagDocRelationship.setCreateDate(new Date());
+        tagDocRelationship.setUpdateDate(new Date());
+        return tagDocRelationship;
+    }
+
+    /**
+     * @Author luojiarui
+     * @Description 批量保存数据
+     * @Date 17:05 2023/4/22
+     * @Param [tags, docIds]
+     * @return void
+     **/
+    @Override
+    @Async
+    public void addTagRelationShip(List<String> tags, List<String> docIds) {
+        for(String docId : docIds) {
+            for (String tag : tags) {
+                if (tag == null) {
+                    continue;
+                }
+                addRelationShip(getRelationInstance(tag, docId));
+            }
+        }
+    }
+
+    @Async
+    @Override
+    public void clearInvalidTagRelationship(String tagId) {
+        Query query = new Query(Criteria.where(TAG_ID).is(tagId));
+        List<TagDocRelationship> relationshipList = mongoTemplate.find(query, TagDocRelationship.class, RELATE_COLLECTION_NAME);
+        // 对列表关系进行分批
+        List<List<TagDocRelationship>> partition = ListUtils.partition(relationshipList, 50);
+
+        List<String> invalidRelationship = new ArrayList<>();
+
+        for (List<TagDocRelationship> relationships : partition) {
+            List<String> docIdList = relationships.stream()
+                    .map(TagDocRelationship::getFileId)
+                    .collect(Collectors.toList());
+
+            List<FileDocument> fileDocuments = fileService.queryByDocIds(docIdList.toArray(new String[0]));
+            List<String> docIdListInDB = fileDocuments.stream()
+                    .map(FileDocument::getId)
+                    .collect(Collectors.toList());
+
+            if (docIdList.size() != docIdListInDB.size()) {
+                // 剩下在列表中的是无效的列表信息
+                docIdList.removeAll(docIdListInDB);
+                List<String> invalidList = relationships.stream()
+                        .filter(item -> docIdList.contains(item.getFileId()))
+                        .map(TagDocRelationship::getId)
+                        .collect(Collectors.toList());
+                invalidRelationship.addAll(invalidList);
+            }
+        }
+        if (!invalidRelationship.isEmpty()) {
+            Query deleteQuery = new Query(Criteria.where(OBJECT_ID).in(invalidRelationship));
+            DeleteResult remove = mongoTemplate.remove(deleteQuery, TagDocRelationship.class, RELATE_COLLECTION_NAME);
+            log.info("查询的无效id：" + tagId + "删除结果数量：" + remove.getDeletedCount());
         }
     }
 
